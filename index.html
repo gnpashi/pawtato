@@ -1259,6 +1259,7 @@
       syncHeart();
       syncNameBadge(url);
       rememberShareUrl(url);
+      warmShareFile(url);
     }
 
     photo.onload = reveal;
@@ -1520,6 +1521,68 @@
      turned into a File and handed to the native sheet together with the name, the breed and
      the deep link. Any failure falls back to sharing the link - but a cancelled share sheet
      is the user saying no, so it never triggers anything else. */
+  /* The photo for the dog on screen, fetched ahead of time.
+
+     Android Chrome only allows navigator.share() while the tap's user activation is still
+     alive, and it is easy to burn that on an await. So the File is prepared in the
+     background: by the time the finger lands the sheet can be opened synchronously, with
+     the image attached. */
+  var shareFiles = {};
+  var shareTasks = {};
+
+  function shareFileName(url, mime) {
+    var slug = dogName(url).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "dog";
+    var extension = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+    return "pawtato-" + slug + "." + extension;
+  }
+
+  function prepareShareFile(url) {
+    if (!url) return Promise.reject(new Error("No dog"));
+    if (shareFiles[url]) return Promise.resolve(shareFiles[url]);
+    if (shareTasks[url]) return shareTasks[url];
+
+    var task = fetch(SHARE_ENDPOINT + encodeURIComponent(url), { credentials: "same-origin" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.blob();
+      })
+      .then(function (blob) {
+        var mime = (blob.type || "").split(";")[0].trim().toLowerCase();
+        if (SHARE_TYPES.indexOf(mime) === -1) throw new Error("Unsupported image type");
+        if (blob.size < 1024) throw new Error("Image too small");
+        var file = new File([blob], shareFileName(url, mime), { type: mime });
+        shareFiles[url] = file;
+        return file;
+      })
+      .catch(function (error) {
+        delete shareTasks[url];
+        throw error;
+      });
+
+    shareTasks[url] = task;
+    return task;
+  }
+
+  /* Only phones that can actually attach a file are worth the extra download. */
+  function canShareFiles() {
+    if (!navigator.share || !navigator.canShare || typeof File !== "function") return false;
+    var connection = navigator.connection;
+    if (connection && connection.saveData) return false;
+    try {
+      return navigator.canShare({ files: [new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "probe.jpg", { type: "image/jpeg" })] });
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function warmShareFile(url) {
+    if (!url || !canShareFiles() || shareFiles[url] || shareTasks[url]) return;
+    window.setTimeout(function () {
+      if (url !== currentUrl) return;
+      prepareShareFile(url).catch(function () { /* the tap will try again */ });
+    }, 400);
+  }
+
   function shareDog(url) {
     if (!url || busy || sharing) return;
 
@@ -1527,12 +1590,9 @@
     var link = createShareUrl(url);
     var title = dogName(url) + " \uD83D\uDC36";
 
-    setSharing(true);
-
     function shareLink(reason) {
       setSharing(false);
       if (reason) console.warn("Image sharing failed:", reason);
-
       if (!navigator.share) {
         copyLink(text);
         return;
@@ -1543,38 +1603,41 @@
       });
     }
 
-    fetch(SHARE_ENDPOINT + encodeURIComponent(url), { credentials: "same-origin" })
-      .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.blob();
-      })
-      .then(function (blob) {
-        var mime = (blob.type || "").split(";")[0].trim().toLowerCase();
-        if (SHARE_TYPES.indexOf(mime) === -1) throw new Error("Unsupported image type: " + mime);
-
-        var extension = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
-        var slug = dogName(url).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "dog";
-        var file = new File([blob], "pawtato-" + slug + "-" + Date.now() + "." + extension, { type: mime });
-
-        if (!navigator.canShare || !navigator.canShare({ files: [file] })) {
-          throw new Error("File sharing not supported");
-        }
-
-        setSharing(false);
-        return navigator.share({ files: [file], title: title, text: text }).catch(function (error) {
-          // Cancelling is not a failure: no second sheet, no clipboard surprise.
-          if (error && error.name === "AbortError") return;
-          shareLink(error && error.message);
-        });
-      })
-      .catch(function (error) {
-        if (error && error.name === "AbortError") {
-          setSharing(false);
-          return;
-        }
+    function send(file) {
+      if (!navigator.canShare || !navigator.canShare({ files: [file] })) {
+        shareLink("File sharing not supported");
+        return;
+      }
+      setSharing(false);
+      navigator.share({ files: [file], title: title, text: text }).catch(function (error) {
+        // Cancelling is not a failure: no second sheet, no clipboard surprise.
+        if (error && error.name === "AbortError") return;
         shareLink(error && error.message);
       });
+    }
+
+    // Prepared already: share right here, inside the gesture, so nothing can invalidate it.
+    if (shareFiles[url]) {
+      send(shareFiles[url]);
+      return;
+    }
+
+    setSharing(true);
+    prepareShareFile(url).then(send).catch(function (error) {
+      shareLink(error && error.message);
+    });
   }
+
+  /* A finger on the button starts the download before the click lands, so even the first
+     tap of a session can open the sheet with the photo already in hand. */
+  function warmOnTouch() {
+    if (currentUrl && !shareFiles[currentUrl] && canShareFiles()) {
+      prepareShareFile(currentUrl).catch(function () { /* the tap will try again */ });
+    }
+  }
+
+  shareBtn.addEventListener("pointerdown", warmOnTouch);
+  shareBtn.addEventListener("touchstart", warmOnTouch, { passive: true });
 
   shareBtn.addEventListener("click", function (event) {
     event.stopPropagation();

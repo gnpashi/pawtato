@@ -4,20 +4,19 @@ One good dog at a time. A single-page site that shows a random dog from the
 [Dog CEO API](https://dog.ceo/dog-api/), lets you save the ones you love, give them a
 name, and share a photo or a link that opens the exact same dog.
 
-Everything is static except two small Netlify pieces: a function that proxies the photo
-and an edge function that renders the link preview.
+Everything is static except one small Netlify function that proxies the photo.
 
 ## Structure
 
 ```
 .
-├── index.html                        # the whole site: HTML, CSS, vanilla JS
-├── netlify.toml                      # publish dir, functions dir, edge route
+├── index.html                  # the whole site: HTML, CSS, vanilla JS
+├── netlify.toml                # publish dir, functions dir, cache headers
+├── og.png                      # fixed link-preview image (the paw mark)
+├── icon-512.png                # apple-touch-icon
 └── netlify
-    ├── functions
-    │   └── dog-image.js              # streams a Dog CEO photo back as binary
-    └── edge-functions
-        └── dog-og.js                 # injects per-dog Open Graph tags into "/"
+    └── functions
+        └── dog-image.js        # streams a Dog CEO photo back as binary
 ```
 
 ## How sharing works
@@ -31,10 +30,9 @@ and an edge function that renders the link preview.
 
 ## Link previews
 
-`netlify/edge-functions/dog-og.js` runs on `/`. For a request with valid `dog`, `name` and
-`breed` parameters it takes `index.html` from `context.next()`, strips the existing
-Open Graph / Twitter tags, and injects tags built from those parameters (`og:image` points
-at the dog's photo). Anything that is not a valid dog share is returned untouched.
+The preview is the same for every link: `og.png`, the paw mark on the site's cream
+background (1200x630). The tags live in the head of `index.html` and are never rewritten
+at runtime, so every crawler sees exactly what is in the file.
 
 ## Image function
 

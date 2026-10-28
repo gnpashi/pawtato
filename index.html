@@ -1710,7 +1710,9 @@
       var scale = Math.min(1, SHARE_MAX_WIDTH / sourceW);
       var w = Math.round(sourceW * scale);
       var h = Math.round(sourceH * scale);
-      var footerH = Math.round(w * 0.17);
+      var markSize = Math.round(w * 0.072);
+      // The footer is just the wordmark plus a little air above and below it.
+      var footerH = Math.round(markSize * 1.85);
 
       var canvas = document.createElement("canvas");
       canvas.width = w;
@@ -1732,7 +1734,7 @@
       ctx.fillRect(0, h * 0.68, w, h * 0.32);
 
       drawChip(ctx, w, h, dogName(url), displayBreed(url));
-      drawWordmark(ctx, w / 2, h + footerH / 2, Math.round(w * 0.072));
+      drawWordmark(ctx, w / 2, h + footerH / 2, markSize);
 
       return new Promise(function (resolve, reject) {
         canvas.toBlob(function (blob) {

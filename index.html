@@ -418,7 +418,9 @@
     gap: 8px;
   }
 
-  .share-debug-actions #share-debug-copy {
+  .share-debug-actions #share-debug-link,
+  .share-debug-actions #share-debug-save,
+  .share-debug-actions #share-debug-retry {
     background: rgba(255, 255, 255, 0.16);
     color: #fff;
   }
@@ -927,8 +929,10 @@
   <p class="share-debug-reason" id="share-debug-reason"></p>
   <pre class="share-debug-log" id="share-debug-log"></pre>
   <div class="share-debug-actions">
-    <button type="button" id="share-debug-retry">Try the photo again</button>
-    <button type="button" data-copy-link id="share-debug-copy">Copy the link instead</button>
+    <button type="button" id="share-debug-force">Try the photo anyway</button>
+    <button type="button" id="share-debug-link">Share the link instead</button>
+    <button type="button" id="share-debug-save">Save the photo to the phone</button>
+    <button type="button" id="share-debug-retry">Download the photo again</button>
   </div>
 </aside>
 
@@ -1643,7 +1647,6 @@
   var shareDebug = document.getElementById("share-debug");
   var shareDebugReason = document.getElementById("share-debug-reason");
   var shareDebugLog = document.getElementById("share-debug-log");
-  var shareDebugCopy = document.getElementById("share-debug-copy");
   var shareDebugClose = document.getElementById("share-debug-close");
 
   function logShare() {
@@ -1695,13 +1698,76 @@
   }
 
   shareDebugClose.addEventListener("click", hideShareError);
+
+  /* Every button here is its own tap, so it gets its own user activation: at most one
+     navigator.share() call per gesture, which is the only pattern Android accepts. */
   document.getElementById("share-debug-retry").addEventListener("click", function () {
     hideShareError();
     prepareShare(shareState.url || currentUrl);
   });
-  shareDebugCopy.addEventListener("click", function () {
-    copyLink(shareText(currentUrl));
-    hideShareError();
+
+  document.getElementById("share-debug-force").addEventListener("click", function () {
+    var file = shareState.file;
+    if (!file) {
+      showShareError("Nothing to send", "The photo is not prepared yet.");
+      return;
+    }
+    if (typeof navigator.share !== "function") {
+      showShareError("This browser cannot share", "navigator.share is missing.");
+      return;
+    }
+    var url = shareState.url || currentUrl;
+    logShare("forcing navigator.share with files, canShare said no");
+    navigator.share({ files: [file], title: dogName(url) + " \uD83D\uDC36", text: shareText(url) })
+      .then(function () {
+        logShare("forced share resolved");
+        hideShareError();
+      })
+      .catch(function (error) {
+        var name = (error && error.name) || "Error";
+        logShare("forced share rejected:", name, error && error.message);
+        if (name === "AbortError") return;
+        shareDebugReason.textContent = name + ": " + ((error && error.message) || "no message");
+        shareDebugLog.textContent = diagnostics("navigator.share({files}) rejected even though it was called from a tap");
+        shareDebug.hidden = false;
+      });
+  });
+
+  document.getElementById("share-debug-link").addEventListener("click", function () {
+    var url = shareState.url || currentUrl;
+    if (typeof navigator.share !== "function") {
+      copyLink(shareText(url));
+      hideShareError();
+      return;
+    }
+    navigator.share({ title: dogName(url) + " \uD83D\uDC36", text: shareText(url), url: createShareUrl(url) })
+      .then(hideShareError)
+      .catch(function (error) {
+        if (error && error.name === "AbortError") return;
+        copyLink(shareText(url));
+        hideShareError();
+      });
+  });
+
+  document.getElementById("share-debug-save").addEventListener("click", function () {
+    var file = shareState.file;
+    if (!file) return;
+    try {
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(file);
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(function () {
+        URL.revokeObjectURL(link.href);
+        link.remove();
+      }, 4000);
+      logShare("saved the photo to the device as", file.name);
+      hideShareError();
+      setStatus("Photo saved to your phone");
+    } catch (error) {
+      showShareError("Could not save the photo", (error && error.message) || String(error));
+    }
   });
 
   function shareFileName(url, mime) {
@@ -1770,6 +1836,11 @@
   }
 
   /* Everything below runs inside the tap, with no awaits before navigator.share(). */
+  /* canShare() is a hint, and on several Android builds it answers false for a perfectly
+     shareable image. Blocking on it means the image is never even tried, so the file share
+     is always attempted; the link share only runs when the file share was refused *before*
+     any sheet opened (TypeError / DataError), because in that case the tap's activation is
+     still intact. After a real sheet has opened - cancel or success - nothing else is called. */
   function shareDog(url) {
     if (!url || busy || sharing) return;
 
@@ -1792,27 +1863,41 @@
     }
 
     if (typeof navigator.share !== "function") {
-      showShareError("This browser cannot share", "navigator.share is not available in this browser.");
+      showShareError("This browser cannot share",
+        "navigator.share is missing. The photo can still be saved to the phone.");
       return;
     }
 
     var file = shareState.file;
-    var canShareFiles = false;
+    var text = shareText(url);
+    var title = dogName(url) + " \uD83D\uDC36";
+    var link = createShareUrl(url);
+
+    var canShareFiles = "unknown";
     try {
       canShareFiles = typeof navigator.canShare === "function" && navigator.canShare({ files: [file] });
     } catch (error) {
-      showShareError("canShare() failed", error.name + ": " + error.message);
-      return;
+      canShareFiles = "threw " + error.name;
     }
+    logShare("canShare({files}) says", canShareFiles, "- trying the photo anyway");
 
-    if (!canShareFiles) {
-      showShareError("This browser will not take the image",
-        "navigator.canShare({files}) returned false for a " + file.type + " file.");
-      return;
+    function shareLink(reason) {
+      sharing = true;
+      navigator.share({ title: title, text: text, url: link })
+        .then(function () {
+          sharing = false;
+          logShare("link share resolved");
+        })
+        .catch(function (error) {
+          sharing = false;
+          var name = (error && error.name) || "Error";
+          logShare("link share rejected:", name, error && error.message);
+          if (name === "AbortError") return;
+          showShareError("Neither the photo nor the link could be shared",
+            name + ": " + ((error && error.message) || "no message"),
+            "image attempt: " + reason);
+        });
     }
-
-    var text = shareText(url);
-    var title = dogName(url) + " \uD83D\uDC36";
 
     setShareBusy(false);
     sharing = true;
@@ -1820,22 +1905,32 @@
 
     navigator.share({ files: [file], title: title, text: text })
       .then(function () {
-        logShare("share resolved");
+        logShare("photo share resolved");
         shareState.status = "ready";
         sharing = false;
       })
       .catch(function (error) {
         var name = (error && error.name) || "Error";
         var message = (error && error.message) || String(error);
-        logShare("share rejected:", name, message);
-
         sharing = false;
+        logShare("photo share rejected:", name, message);
+
         if (name === "AbortError") {
-          // The user closed the sheet: not a failure, and never a second call.
+          // The sheet was open and the user closed it: that is the whole answer.
           shareState.status = "ready";
           return;
         }
-        showShareError("The share sheet refused the image", name + ": " + message);
+
+        // Refused before any sheet appeared: the gesture is still alive, so one link share.
+        if (name === "TypeError" || name === "DataError" || name === "NotSupportedError") {
+          shareLink(name);
+          return;
+        }
+
+        // Everything else (NotAllowedError, SecurityError...) means the browser said no
+        // outright. Do not burn another call; show what happened and offer the actions.
+        showShareError("The share sheet refused the photo", name + ": " + message,
+          "navigator.canShare({files}) said " + canShareFiles);
       });
   }
 

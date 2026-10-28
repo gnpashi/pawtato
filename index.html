@@ -1730,32 +1730,17 @@
       var chipHeight = Math.round(w * 0.10);
       drawChip(ctx, w, h, dogName(url), displayBreed(url));
 
-      // The wordmark rides on the photo itself, on the right, level with the chip, in the
-      // site's own colours - ink and bark on the same warm pill.
+      // The wordmark sits bare on the photo, right aligned with the chip, in the site's
+      // own ink and bark. A light halo keeps it readable without adding a background.
       var markSize = Math.round(w * 0.045);
-      ctx.font = "850 " + markSize + "px " + SHARE_FONT;
-      var spacing = -(markSize * 0.045);
-      if ("letterSpacing" in ctx) ctx.letterSpacing = spacing.toFixed(1) + "px";
-      var markWidth = ctx.measureText("pawtato").width;
-      if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
-
-      var markPadX = Math.round(w * 0.028);
-      var markPillH = Math.round(markSize * 1.95);
-      var markPillW = Math.round(markWidth + markPadX * 2);
-      var markX = w - chipMargin - markPillW;
-      var markY = h - chipMargin - chipHeight / 2 - markPillH / 2;
-
       ctx.save();
-      ctx.shadowColor = "rgba(36, 26, 19, 0.5)";
-      ctx.shadowBlur = Math.round(w * 0.02);
-      ctx.shadowOffsetY = Math.round(w * 0.006);
-      ctx.fillStyle = "rgba(255, 250, 242, 0.92)";
-      roundedPath(ctx, markX, markY, markPillW, markPillH, markPillH / 2);
-      ctx.fill();
-      ctx.restore();
-
-      drawWordmark(ctx, markX + markPillW - markPadX, markY + markPillH / 2, markSize,
+      ctx.shadowColor = "rgba(255, 250, 242, 0.85)";
+      ctx.shadowBlur = Math.round(w * 0.014);
+      drawWordmark(ctx, w - chipMargin, h - chipMargin - chipHeight / 2, markSize,
         { head: "#241a13", tail: "#b4643c" });
+      drawWordmark(ctx, w - chipMargin, h - chipMargin - chipHeight / 2, markSize,
+        { head: "#241a13", tail: "#b4643c" });
+      ctx.restore();
 
       return new Promise(function (resolve, reject) {
         canvas.toBlob(function (blob) {

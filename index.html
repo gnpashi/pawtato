@@ -1710,17 +1710,11 @@
       var scale = Math.min(1, SHARE_MAX_WIDTH / sourceW);
       var w = Math.round(sourceW * scale);
       var h = Math.round(sourceH * scale);
-      // A slim polaroid border under the photo.
-      var footerH = Math.round(w * 0.105);
-
+      // No border, no frame: just the photo with its two marks on it.
       var canvas = document.createElement("canvas");
       canvas.width = w;
-      canvas.height = h + footerH;
+      canvas.height = h;
       var ctx = canvas.getContext("2d");
-
-      // Polaroid paper
-      ctx.fillStyle = "#fffaf2";
-      ctx.fillRect(0, 0, w, h + footerH);
 
       // The photo exactly as it is - no crop, no stretch.
       ctx.drawImage(bitmap, 0, 0, w, h);
@@ -1736,15 +1730,32 @@
       var chipHeight = Math.round(w * 0.10);
       drawChip(ctx, w, h, dogName(url), displayBreed(url));
 
-      // The wordmark rides on the photo itself, on the right, level with the chip.
-      var markOnPhoto = Math.round(w * 0.052);
+      // The wordmark rides on the photo itself, on the right, level with the chip, in the
+      // site's own colours - ink and bark on the same warm pill.
+      var markSize = Math.round(w * 0.045);
+      ctx.font = "850 " + markSize + "px " + SHARE_FONT;
+      var spacing = -(markSize * 0.045);
+      if ("letterSpacing" in ctx) ctx.letterSpacing = spacing.toFixed(1) + "px";
+      var markWidth = ctx.measureText("pawtato").width;
+      if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+
+      var markPadX = Math.round(w * 0.028);
+      var markPillH = Math.round(markSize * 1.95);
+      var markPillW = Math.round(markWidth + markPadX * 2);
+      var markX = w - chipMargin - markPillW;
+      var markY = h - chipMargin - chipHeight / 2 - markPillH / 2;
+
       ctx.save();
-      ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-      ctx.shadowBlur = Math.round(w * 0.012);
-      ctx.shadowOffsetY = Math.round(w * 0.003);
-      drawWordmark(ctx, w - chipMargin, h - chipMargin - chipHeight / 2, markOnPhoto,
-        { head: "#ffffff", tail: "#ffcf6b" });
+      ctx.shadowColor = "rgba(36, 26, 19, 0.5)";
+      ctx.shadowBlur = Math.round(w * 0.02);
+      ctx.shadowOffsetY = Math.round(w * 0.006);
+      ctx.fillStyle = "rgba(255, 250, 242, 0.92)";
+      roundedPath(ctx, markX, markY, markPillW, markPillH, markPillH / 2);
+      ctx.fill();
       ctx.restore();
+
+      drawWordmark(ctx, markX + markPillW - markPadX, markY + markPillH / 2, markSize,
+        { head: "#241a13", tail: "#b4643c" });
 
       return new Promise(function (resolve, reject) {
         canvas.toBlob(function (blob) {

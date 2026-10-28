@@ -1562,6 +1562,190 @@
     return "pawtato-" + slug + "." + extension;
   }
 
+  /* ------------------------------------------------------------------------------------
+     The shared picture: the photo untouched, the name and breed in the site's own chip
+     language near the bottom, and a polaroid footer carrying the wordmark. Everything is
+     drawn into pixels, so the attachment looks right in every app.
+     ------------------------------------------------------------------------------------ */
+
+  var SHARE_MAX_WIDTH = 1400;
+  var SHARE_FONT = 'ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+
+  function loadBitmap(file) {
+    if (window.createImageBitmap) {
+      return createImageBitmap(file).catch(function () {
+        return loadBitmapFallback(file);
+      });
+    }
+    return loadBitmapFallback(file);
+  }
+
+  function loadBitmapFallback(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not decode the photo"));
+      };
+      img.src = url;
+    });
+  }
+
+  function roundedPath(ctx, x, y, w, hh, r) {
+    var radius = Math.min(r, hh / 2, w / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + hh, radius);
+    ctx.arcTo(x + w, y + hh, x, y + hh, radius);
+    ctx.arcTo(x, y + hh, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+  }
+
+  /* Writes the wordmark: "paw" in ink, "tato" in the site's bark colour. */
+  function drawWordmark(ctx, cx, cy, size) {
+    var ink = "#241a13";
+    var bark = "#b4643c";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = "850 " + size + "px " + SHARE_FONT;
+    var letterSpacing = -(size * 0.045);
+    if ("letterSpacing" in ctx) ctx.letterSpacing = letterSpacing.toFixed(1) + "px";
+
+    var head = "paw";
+    var tail = "tato";
+    var headWidth = ctx.measureText(head).width;
+    var tailWidth = ctx.measureText(tail).width;
+    var startX = cx - (headWidth + tailWidth) / 2;
+
+    ctx.fillStyle = ink;
+    ctx.fillText(head, startX, cy);
+    ctx.fillStyle = bark;
+    ctx.fillText(tail, startX + headWidth, cy);
+
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+    return headWidth + tailWidth;
+  }
+
+  /* name • breed, in the same pill the page uses over the photo. */
+  function drawChip(ctx, w, h, name, breed) {
+    var margin = Math.round(w * 0.045);
+    var padX = Math.round(w * 0.039);
+    var pillH = Math.round(w * 0.10);
+    var nameSize = Math.round(w * 0.0363);
+    var breedSize = Math.round(nameSize * 0.94);
+    var gap = Math.round(w * 0.018);
+    var dotR = Math.max(2, Math.round(w * 0.0045));
+    var maxText = w - margin * 2 - padX * 2;
+
+    function measure(ns, bs) {
+      ctx.font = "800 " + ns + "px " + SHARE_FONT;
+      var nw = ctx.measureText(name).width;
+      ctx.font = "600 " + bs + "px " + SHARE_FONT;
+      var bw = ctx.measureText(breed).width;
+      return { name: nw, breed: bw, total: nw + gap * 2 + dotR * 2 + bw };
+    }
+
+    var box = measure(nameSize, breedSize);
+    // Long names and breeds shrink instead of spilling out of the picture.
+    while (box.total > maxText && nameSize > w * 0.022) {
+      nameSize = Math.max(Math.round(w * 0.022), Math.round(nameSize * 0.94));
+      breedSize = Math.max(Math.round(w * 0.020), Math.round(breedSize * 0.94));
+      box = measure(nameSize, breedSize);
+    }
+
+    var pillW = Math.min(maxText + padX * 2, Math.round(box.total + padX * 2));
+    var x = margin;
+    var y = h - margin - pillH;
+
+    ctx.save();
+    ctx.shadowColor = "rgba(36, 26, 19, 0.5)";
+    ctx.shadowBlur = Math.round(w * 0.02);
+    ctx.shadowOffsetY = Math.round(w * 0.006);
+    ctx.fillStyle = "rgba(255, 250, 242, 0.92)";
+    roundedPath(ctx, x, y, pillW, pillH, pillH / 2);
+    ctx.fill();
+    ctx.restore();
+
+    var textY = y + pillH / 2;
+    var cursor = x + padX;
+
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+
+    // Clip so an extreme string can never escape the pill.
+    ctx.save();
+    roundedPath(ctx, x, y, pillW, pillH, pillH / 2);
+    ctx.clip();
+
+    ctx.fillStyle = "#241a13";
+    ctx.font = "800 " + nameSize + "px " + SHARE_FONT;
+    ctx.fillText(name, cursor, textY);
+    cursor += box.name + gap;
+
+    ctx.fillStyle = "rgba(36, 26, 19, 0.35)";
+    ctx.beginPath();
+    ctx.arc(cursor + dotR, textY, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    cursor += dotR * 2 + gap;
+
+    ctx.fillStyle = "rgba(36, 26, 19, 0.82)";
+    ctx.font = "600 " + breedSize + "px " + SHARE_FONT;
+    ctx.fillText(breed, cursor, textY);
+
+    ctx.restore();
+  }
+
+  function decoratePhoto(file, url) {
+    return loadBitmap(file).then(function (bitmap) {
+      var sourceW = bitmap.width || bitmap.naturalWidth;
+      var sourceH = bitmap.height || bitmap.naturalHeight;
+      if (!sourceW || !sourceH) throw new Error("Photo has no size");
+
+      var scale = Math.min(1, SHARE_MAX_WIDTH / sourceW);
+      var w = Math.round(sourceW * scale);
+      var h = Math.round(sourceH * scale);
+      var footerH = Math.round(w * 0.17);
+
+      var canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h + footerH;
+      var ctx = canvas.getContext("2d");
+
+      // Polaroid paper
+      ctx.fillStyle = "#fffaf2";
+      ctx.fillRect(0, 0, w, h + footerH);
+
+      // The photo exactly as it is - no crop, no stretch.
+      ctx.drawImage(bitmap, 0, 0, w, h);
+
+      // A soft shade only where the chip sits, so white dogs stay readable.
+      var gradient = ctx.createLinearGradient(0, h * 0.68, 0, h);
+      gradient.addColorStop(0, "rgba(20, 14, 9, 0)");
+      gradient.addColorStop(1, "rgba(20, 14, 9, 0.42)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, h * 0.68, w, h * 0.32);
+
+      drawChip(ctx, w, h, dogName(url), displayBreed(url));
+      drawWordmark(ctx, w / 2, h + footerH / 2, Math.round(w * 0.072));
+
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (blob) {
+          if (!blob) {
+            reject(new Error("Could not encode the photo"));
+            return;
+          }
+          resolve(new File([blob], shareFileName(url, "image/jpeg"), { type: "image/jpeg" }));
+        }, "image/jpeg", 0.92);
+      });
+    });
+  }
+
   /* Fetches the photo of this dog through the Netlify Function and keeps the File in memory.
      A stale response (the user moved on to another dog) is thrown away by the token. */
   function prepareShare(url) {
@@ -1604,12 +1788,24 @@
 
         var file = new File([blob], shareFileName(url, mime), { type: mime });
         noteShare("file created:", file.name, file.type, file.size + " bytes");
-
-        shareState.file = file;
+        return decoratePhoto(file, url).then(function (decorated) {
+          return { plain: file, decorated: decorated };
+        }).catch(function (error) {
+          // If the drawing fails, the untouched photo is still perfectly shareable.
+          noteShare("decoration failed, using the plain photo:", error && error.message);
+          return { plain: file, decorated: file };
+        });
+      })
+      .then(function (files) {
+        if (token !== shareState.token) {
+          noteShare("stale decoration dropped");
+          return;
+        }
+        shareState.file = files.decorated;
         shareState.status = "ready";
         setShareBusy(false);
         shareBtn.disabled = false;
-        noteShare("ready to share");
+        noteShare("ready to share:", files.decorated.size, "bytes");
       })
       .catch(function (error) {
         if (token !== shareState.token) return;

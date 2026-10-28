@@ -1,0 +1,18 @@
+# Netlify configuration: a static single-page site plus one serverless function and one
+# edge function. Nothing is built - index.html is served as it is.
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# Rewrites the HTML of "/" so shared links carry server-rendered Open Graph tags.
+[[edge_functions]]
+  function = "dog-og"
+  path = "/"
+
+# The image proxy must never be cached by the CDN as HTML.
+[[headers]]
+  for = "/.netlify/functions/dog-image"
+  [headers.values]
+    cache-control = "public, max-age=86400"
+    x-content-type-options = "nosniff"

@@ -1473,8 +1473,8 @@
 
   function shareText(url) {
     var image = url || currentUrl;
-    return "Meet " + dogName(image) + "\n" +
-      "The " + displayBreed(image) + "\n" +
+    return "Meet " + dogName(image) + "!\n" +
+      "The " + displayBreed(image) + "\n\n" +
       createShareUrl(image);
   }
 
@@ -1607,10 +1607,10 @@
     ctx.closePath();
   }
 
-  /* Writes the wordmark: "paw" in ink, "tato" in the site's bark colour. */
-  function drawWordmark(ctx, cx, cy, size) {
-    var ink = "#241a13";
-    var bark = "#b4643c";
+  /* Writes the wordmark: "paw" then "tato" in the site's two colours. */
+  function drawWordmark(ctx, rightEdge, cy, size, palette) {
+    var ink = (palette && palette.head) || "#241a13";
+    var bark = (palette && palette.tail) || "#b4643c";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.font = "850 " + size + "px " + SHARE_FONT;
@@ -1621,7 +1621,7 @@
     var tail = "tato";
     var headWidth = ctx.measureText(head).width;
     var tailWidth = ctx.measureText(tail).width;
-    var startX = cx - (headWidth + tailWidth) / 2;
+    var startX = rightEdge - (headWidth + tailWidth);
 
     ctx.fillStyle = ink;
     ctx.fillText(head, startX, cy);
@@ -1710,9 +1710,8 @@
       var scale = Math.min(1, SHARE_MAX_WIDTH / sourceW);
       var w = Math.round(sourceW * scale);
       var h = Math.round(sourceH * scale);
-      var markSize = Math.round(w * 0.072);
-      // The footer is just the wordmark plus a little air above and below it.
-      var footerH = Math.round(markSize * 1.85);
+      // A slim polaroid border under the photo.
+      var footerH = Math.round(w * 0.105);
 
       var canvas = document.createElement("canvas");
       canvas.width = w;
@@ -1733,8 +1732,19 @@
       ctx.fillStyle = gradient;
       ctx.fillRect(0, h * 0.68, w, h * 0.32);
 
+      var chipMargin = Math.round(w * 0.045);
+      var chipHeight = Math.round(w * 0.10);
       drawChip(ctx, w, h, dogName(url), displayBreed(url));
-      drawWordmark(ctx, w / 2, h + footerH / 2, markSize);
+
+      // The wordmark rides on the photo itself, on the right, level with the chip.
+      var markOnPhoto = Math.round(w * 0.052);
+      ctx.save();
+      ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+      ctx.shadowBlur = Math.round(w * 0.012);
+      ctx.shadowOffsetY = Math.round(w * 0.003);
+      drawWordmark(ctx, w - chipMargin, h - chipMargin - chipHeight / 2, markOnPhoto,
+        { head: "#ffffff", tail: "#ffcf6b" });
+      ctx.restore();
 
       return new Promise(function (resolve, reject) {
         canvas.toBlob(function (blob) {

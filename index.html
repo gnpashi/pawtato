@@ -356,87 +356,6 @@
   .credits p { margin: 0; font-size: 11.5px; color: rgba(107, 85, 70, 0.8); }
   .credits a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
-  .share-debug {
-    position: fixed;
-    left: 50%;
-    bottom: 14px;
-    transform: translateX(-50%);
-    z-index: 60;
-    width: min(420px, calc(100vw - 24px));
-    padding: 14px 15px 12px;
-    border-radius: 18px;
-    background: rgba(24, 17, 12, 0.96);
-    color: #fff;
-    box-shadow: 0 22px 48px -24px rgba(0, 0, 0, 0.9);
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  .share-debug[hidden] { display: none; }
-
-  .share-debug-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 6px;
-  }
-
-  .share-debug-close {
-    border: 0;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 15px;
-    line-height: 1;
-    padding: 4px 6px;
-    cursor: pointer;
-  }
-
-  .share-debug-reason {
-    margin: 0 0 8px;
-    color: #ffc9a3;
-    font-weight: 600;
-  }
-
-  .share-debug-log {
-    margin: 0 0 10px;
-    padding: 9px 10px;
-    max-height: 190px;
-    overflow: auto;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.86);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .share-debug-actions {
-    display: grid;
-    gap: 8px;
-  }
-
-  .share-debug-actions #share-debug-link,
-  .share-debug-actions #share-debug-save,
-  .share-debug-actions #share-debug-retry {
-    background: rgba(255, 255, 255, 0.16);
-    color: #fff;
-  }
-
-  .share-debug-actions button {
-    width: 100%;
-    padding: 9px 12px;
-    border: 0;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.94);
-    color: #241a13;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
   .lightbox {
     position: fixed;
     inset: 0;
@@ -919,22 +838,6 @@
   <p>Icons by <a href="https://openmoji.org/" target="_blank" rel="noopener">OpenMoji</a> (CC BY-SA 4.0) · Dogs from the
   <a href="https://dog.ceo/dog-api/" target="_blank" rel="noopener">Dog CEO API</a></p>
 </footer>
-
-<aside class="share-debug" id="share-debug" hidden role="dialog" aria-modal="false"
-       aria-labelledby="share-debug-title">
-  <div class="share-debug-head">
-    <strong id="share-debug-title">Sharing failed</strong>
-    <button type="button" class="share-debug-close" id="share-debug-close" aria-label="Close">&#10005;</button>
-  </div>
-  <p class="share-debug-reason" id="share-debug-reason"></p>
-  <pre class="share-debug-log" id="share-debug-log"></pre>
-  <div class="share-debug-actions">
-    <button type="button" id="share-debug-force">Try the photo anyway</button>
-    <button type="button" id="share-debug-link">Share the link instead</button>
-    <button type="button" id="share-debug-save">Save the photo to the phone</button>
-    <button type="button" id="share-debug-retry">Download the photo again</button>
-  </div>
-</aside>
 
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Dog photo, full screen">
   <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close">&#10005;</button>
@@ -1644,131 +1547,14 @@
     bytes: 0
   };
 
-  var shareDebug = document.getElementById("share-debug");
-  var shareDebugReason = document.getElementById("share-debug-reason");
-  var shareDebugLog = document.getElementById("share-debug-log");
-  var shareDebugClose = document.getElementById("share-debug-close");
-
-  function logShare() {
-    var parts = Array.prototype.slice.call(arguments);
+  /* Sharing never shouts at the user. Anything worth knowing goes to the console. */
+  function noteShare() {
     try {
-      console.log("[share] " + parts.join(" "));
+      console.log.apply(console, ["[share]"].concat(Array.prototype.slice.call(arguments)));
     } catch (error) {
-      /* consoles come and go */
+      /* no console, no noise */
     }
   }
-
-  function diagnostics(extra) {
-    var lines = [
-      "navigator.share: " + (typeof navigator.share === "function" ? "yes" : "MISSING"),
-      "navigator.canShare: " + (typeof navigator.canShare === "function" ? "yes" : "MISSING"),
-      "secure context: " + (window.isSecureContext ? "yes" : "NO (https required)"),
-      "file: " + (shareState.file ? "yes (" + shareState.file.name + ")" : "no"),
-      "http: " + (shareState.http || "-"),
-      "mime: " + (shareState.mime || "-"),
-      "bytes: " + (shareState.bytes || "-"),
-      "canShare({files}): " + (shareState.file && typeof navigator.canShare === "function"
-        ? (function () {
-            try { return navigator.canShare({ files: [shareState.file] }) ? "true" : "FALSE"; }
-            catch (error) { return "threw " + error.name; }
-          })()
-        : "-"),
-      "user activation: " + (navigator.userActivation
-        ? (navigator.userActivation.isActive ? "active" : "inactive")
-        : "n/a")
-    ];
-    if (extra) lines.push(extra);
-    return lines.join("\n");
-  }
-
-  function showShareError(title, reason, extra) {
-    shareState.status = "error";
-    shareState.reason = reason;
-    setShareBusy(false);
-    shareBtn.disabled = false;
-    shareDebug.querySelector("#share-debug-title").textContent = title || "Sharing failed";
-    shareDebugReason.textContent = reason || "";
-    shareDebugLog.textContent = diagnostics(extra);
-    shareDebug.hidden = false;
-    logShare("FAILED:", reason, "|", diagnostics(extra).replace(/\n/g, " | "));
-  }
-
-  function hideShareError() {
-    shareDebug.hidden = true;
-  }
-
-  shareDebugClose.addEventListener("click", hideShareError);
-
-  /* Every button here is its own tap, so it gets its own user activation: at most one
-     navigator.share() call per gesture, which is the only pattern Android accepts. */
-  document.getElementById("share-debug-retry").addEventListener("click", function () {
-    hideShareError();
-    prepareShare(shareState.url || currentUrl);
-  });
-
-  document.getElementById("share-debug-force").addEventListener("click", function () {
-    var file = shareState.file;
-    if (!file) {
-      showShareError("Nothing to send", "The photo is not prepared yet.");
-      return;
-    }
-    if (typeof navigator.share !== "function") {
-      showShareError("This browser cannot share", "navigator.share is missing.");
-      return;
-    }
-    var url = shareState.url || currentUrl;
-    logShare("forcing navigator.share with files, canShare said no");
-    navigator.share({ files: [file], title: dogName(url) + " \uD83D\uDC36", text: shareText(url) })
-      .then(function () {
-        logShare("forced share resolved");
-        hideShareError();
-      })
-      .catch(function (error) {
-        var name = (error && error.name) || "Error";
-        logShare("forced share rejected:", name, error && error.message);
-        if (name === "AbortError") return;
-        shareDebugReason.textContent = name + ": " + ((error && error.message) || "no message");
-        shareDebugLog.textContent = diagnostics("navigator.share({files}) rejected even though it was called from a tap");
-        shareDebug.hidden = false;
-      });
-  });
-
-  document.getElementById("share-debug-link").addEventListener("click", function () {
-    var url = shareState.url || currentUrl;
-    if (typeof navigator.share !== "function") {
-      copyLink(shareText(url));
-      hideShareError();
-      return;
-    }
-    navigator.share({ title: dogName(url) + " \uD83D\uDC36", text: shareText(url), url: createShareUrl(url) })
-      .then(hideShareError)
-      .catch(function (error) {
-        if (error && error.name === "AbortError") return;
-        copyLink(shareText(url));
-        hideShareError();
-      });
-  });
-
-  document.getElementById("share-debug-save").addEventListener("click", function () {
-    var file = shareState.file;
-    if (!file) return;
-    try {
-      var link = document.createElement("a");
-      link.href = URL.createObjectURL(file);
-      link.download = file.name;
-      document.body.appendChild(link);
-      link.click();
-      window.setTimeout(function () {
-        URL.revokeObjectURL(link.href);
-        link.remove();
-      }, 4000);
-      logShare("saved the photo to the device as", file.name);
-      hideShareError();
-      setStatus("Photo saved to your phone");
-    } catch (error) {
-      showShareError("Could not save the photo", (error && error.message) || String(error));
-    }
-  });
 
   function shareFileName(url, mime) {
     var slug = dogName(url).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "dog";
@@ -1792,24 +1578,24 @@
     shareState.bytes = 0;
 
     setShareBusy(true);
-    logShare("preparing", url);
+    noteShare("preparing", url);
 
     fetch(SHARE_ENDPOINT + encodeURIComponent(url), { credentials: "same-origin" })
       .then(function (response) {
         shareState.http = response.status;
-        logShare("response", response.status, response.headers.get("content-type"));
+        noteShare("response", response.status, response.headers.get("content-type"));
         if (!response.ok) throw new Error("Image download failed (HTTP " + response.status + ")");
         return response.blob();
       })
       .then(function (blob) {
         if (token !== shareState.token) {
-          logShare("stale response dropped");
+          noteShare("stale response dropped");
           return;
         }
         var mime = (blob.type || "").split(";")[0].trim().toLowerCase();
         shareState.mime = mime;
         shareState.bytes = blob.size;
-        logShare("blob", mime, blob.size + " bytes");
+        noteShare("blob", mime, blob.size + " bytes");
 
         if (SHARE_TYPES.indexOf(mime) === -1) {
           throw new Error("Unsupported image type: " + (mime || "none"));
@@ -1817,21 +1603,22 @@
         if (blob.size < 1024) throw new Error("Image looks empty (" + blob.size + " bytes)");
 
         var file = new File([blob], shareFileName(url, mime), { type: mime });
-        logShare("file created:", file.name, file.type, file.size + " bytes");
+        noteShare("file created:", file.name, file.type, file.size + " bytes");
 
         shareState.file = file;
         shareState.status = "ready";
         setShareBusy(false);
         shareBtn.disabled = false;
-        logShare("ready to share");
+        noteShare("ready to share");
       })
       .catch(function (error) {
         if (token !== shareState.token) return;
         shareState.status = "error";
-        // Not fatal: the button stays usable so the error can be looked at.
+        shareState.reason = (error && error.message) ? error.message : String(error);
+        // Quiet on screen: the button simply stays as it was, and the tap can try again.
         setShareBusy(false);
         shareBtn.disabled = false;
-        showShareError("Could not prepare the photo", error && error.message ? error.message : String(error));
+        noteShare("prepare failed:", shareState.reason);
       });
   }
 
@@ -1841,30 +1628,32 @@
      is always attempted; the link share only runs when the file share was refused *before*
      any sheet opened (TypeError / DataError), because in that case the tap's activation is
      still intact. After a real sheet has opened - cancel or success - nothing else is called. */
+  /* No error popups: sharing either works or it stays quiet.
+
+     The photo is always attempted first - canShare() is only a hint and answers false on
+     browsers that share links but not files (Firefox, in-app webviews). If the file share is
+     refused before any sheet appears, one link share follows inside the same tap. If the sheet
+     was opened and cancelled, nothing else happens. */
   function shareDog(url) {
     if (!url || busy || sharing) return;
 
-    hideShareError();
-
     if (shareState.url !== url || shareState.status === "idle") {
-      showShareError("The photo is not ready yet", "Wait for the share button to finish loading, then tap again.");
       prepareShare(url);
       return;
     }
 
     if (shareState.status === "loading") {
-      showShareError("The photo is still loading", "Give it a moment and tap again.");
+      noteShare("still preparing, tap again in a moment");
       return;
     }
 
     if (!shareState.file) {
-      showShareError("No image to share", shareState.reason || "The photo was not prepared.");
+      noteShare("no file to share:", shareState.reason || "unknown");
       return;
     }
 
     if (typeof navigator.share !== "function") {
-      showShareError("This browser cannot share",
-        "navigator.share is missing. The photo can still be saved to the phone.");
+      copyLink(shareText(url));
       return;
     }
 
@@ -1873,47 +1662,37 @@
     var title = dogName(url) + " \uD83D\uDC36";
     var link = createShareUrl(url);
 
-    var canShareFiles = "unknown";
-    try {
-      canShareFiles = typeof navigator.canShare === "function" && navigator.canShare({ files: [file] });
-    } catch (error) {
-      canShareFiles = "threw " + error.name;
-    }
-    logShare("canShare({files}) says", canShareFiles, "- trying the photo anyway");
-
     function shareLink(reason) {
       sharing = true;
       navigator.share({ title: title, text: text, url: link })
         .then(function () {
           sharing = false;
-          logShare("link share resolved");
+          noteShare("link share resolved");
         })
         .catch(function (error) {
           sharing = false;
           var name = (error && error.name) || "Error";
-          logShare("link share rejected:", name, error && error.message);
+          noteShare("link share rejected:", name, error && error.message);
           if (name === "AbortError") return;
-          showShareError("Neither the photo nor the link could be shared",
-            name + ": " + ((error && error.message) || "no message"),
-            "image attempt: " + reason);
+          copyLink(text);
         });
     }
 
     setShareBusy(false);
     sharing = true;
-    logShare("calling navigator.share with", file.name, file.size + " bytes");
+    noteShare("sharing the photo:", file.name, file.size + " bytes");
 
     navigator.share({ files: [file], title: title, text: text })
       .then(function () {
-        logShare("photo share resolved");
-        shareState.status = "ready";
         sharing = false;
+        shareState.status = "ready";
+        noteShare("photo share resolved");
       })
       .catch(function (error) {
+        sharing = false;
         var name = (error && error.name) || "Error";
         var message = (error && error.message) || String(error);
-        sharing = false;
-        logShare("photo share rejected:", name, message);
+        noteShare("photo share rejected:", name, message);
 
         if (name === "AbortError") {
           // The sheet was open and the user closed it: that is the whole answer.
@@ -1921,16 +1700,14 @@
           return;
         }
 
-        // Refused before any sheet appeared: the gesture is still alive, so one link share.
         if (name === "TypeError" || name === "DataError" || name === "NotSupportedError") {
+          // Refused before a sheet opened, so the gesture is still alive: send the link.
           shareLink(name);
           return;
         }
 
-        // Everything else (NotAllowedError, SecurityError...) means the browser said no
-        // outright. Do not burn another call; show what happened and offer the actions.
-        showShareError("The share sheet refused the photo", name + ": " + message,
-          "navigator.canShare({files}) said " + canShareFiles);
+        // Anything else (NotAllowedError and friends): say nothing, keep the page calm.
+        shareState.status = "ready";
       });
   }
 
